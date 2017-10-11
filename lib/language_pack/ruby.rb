@@ -151,6 +151,7 @@ WARNING
   def binstubs_relative_paths
     [
       "bin",
+      #"#{bundler_path}/exe",
       bundler_binstubs_path,
       "#{slug_vendor_base}/bin"
     ]
@@ -540,12 +541,16 @@ WARNING
     "vendor/bundle/bin"
   end
 
+  def bundler_path
+    @bundler_path ||= "#{slug_vendor_base}/gems/#{BUNDLER_GEM_PATH}"
+  end
+
   # runs bundler to install the dependencies
   def build_bundler(default_bundle_without)
     instrument 'ruby.build_bundler' do
       log("bundle") do
         bundle_without = env("BUNDLE_WITHOUT") || default_bundle_without
-        bundle_bin     = "bundle"
+        bundle_bin     = "bundle _1.15.2_"
         bundle_command = "#{bundle_bin} install --without #{bundle_without} --path vendor/bundle --binstubs #{bundler_binstubs_path}"
         bundle_command << " -j4"
 
@@ -589,7 +594,6 @@ WARNING
           yaml_include   = File.expand_path("#{libyaml_dir}/include").shellescape
           yaml_lib       = File.expand_path("#{libyaml_dir}/lib").shellescape
           pwd            = Dir.pwd
-          bundler_path   = "#{pwd}/#{slug_vendor_base}/gems/#{BUNDLER_GEM_PATH}/lib"
           # we need to set BUNDLE_CONFIG and BUNDLE_GEMFILE for
           # codon since it uses bundler.
           env_vars       = {
@@ -601,8 +605,16 @@ WARNING
             "RUBYOPT"                       => syck_hack,
             "NOKOGIRI_USE_SYSTEM_LIBRARIES" => "true"
           }
-          env_vars["BUNDLER_LIB_PATH"] = "#{bundler_path}" if ruby_version.ruby_version == "1.8.7"
+          env_vars["BUNDLER_LIB_PATH"] = "#{pwd}/#{bundler_path}/lib" if ruby_version.ruby_version == "1.8.7"
+          pipe("cat < $(ls `which bundle`)")
+          pipe("bundle _1.15.2_ -v")
           puts "Running: #{bundle_command}"
+          # bundler binstub bug in Ruby 2.5.0-preview1
+          # https://bugs.ruby-lang.org/issues/13997
+          #if ruby_version.ruby_version >= "2.5.0"
+          #  bundle_command.prepend("#{bundler.bundler_path}/gems/#{LanguagePack::Helpers::BundlerWrapper::BUNDLER_DIR_NAME}/exe/")
+          #end
+
           instrument "ruby.bundle_install" do
             bundle_time = Benchmark.realtime do
               bundler_output << pipe("#{bundle_command} --no-clean", out: "2>&1", env: env_vars, user_env: true)
